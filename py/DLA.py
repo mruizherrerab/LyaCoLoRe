@@ -23,6 +23,12 @@ except:
     print('WARN: pyigm not found, DLA distributions will not be perfect!')
     use_pyigm = False
 
+def lpt_threshold(z):
+    a=5.33080934
+    b=-2.44382773
+    c= -0.26016998
+    return a * (z+1)**b + c
+
 def get_threshold(b2f):
     """ Compute the field threshold for a given bias
     Arguments:
@@ -219,6 +225,14 @@ def get_DLA_table(object,dla_bias=2.0,dla_bias_z=2.25,extrapolate_z_down=None,NH
         else:
             raise ValueError('DLA bias evol not recognised.')
         deltas = object.GAUSSIAN_DELTA_rows
+        nu_arr = get_threshold(b2f)
+        flagged_cells = flag_DLA(z_qso,z_cell,deltas,nu_arr,sigma_g)
+        p_nu_z = 1.0-norm.cdf(nu_arr)
+        mean_N_per_cell = z_width * dndz(z_cell,NHI_min=NHI_min,NHI_max=NHI_max)
+        #p_nu_z = 1.0-norm.cdf(nu_arr)
+        w = p_nu_z>0
+        mu = np.zeros(p_nu_z.shape)
+        mu[w] = mean_N_per_cell[w]/p_nu_z[w]        
 
     elif object.DENSITY_DELTA_rows is not None:
         """
@@ -232,21 +246,45 @@ def get_DLA_table(object,dla_bias=2.0,dla_bias_z=2.25,extrapolate_z_down=None,NH
             raise ValueError('DLA bias evol not recognised.')
         deltas = object.DENSITY_DELTA_rows
         """
-        raise ValueError('Adding DLAs without Gaussian skewers is not implemented as yet.')
+        #raise ValueError('Adding DLAs without Gaussian skewers is not implemented as yet.')
+        # FOR NOW HERE WE WILL BE USING JUST A THRESHOLD DERIVED DIRECTLY FROM COLORE SNAPSHOTS
+        deltas = object.DENSITY_DELTA_rows
+        nu_arr = lpt_threshold(z_cell) #GET THRESHOLD
+        flagged_cells = flag_DLA(z_qso,z_cell,deltas,nu_arr,1) #FLAG CELLS ABOVE THRESHOLD ASSUMING SIGMA_G=1 FOR 2LPT CASE
+        
+        #centers = np.genfromtxt(os.environ['LYACOLORE_PATH']+'/input_files/dla_files/2lpt_cdf.txt')[:,0]
+        #cdf = np.genfromtxt(os.environ['LYACOLORE_PATH']+'/input_files/dla_files/2lpt_cdf.txt')[:,1] #READ CDF OF 2LPT DENSITIES AND CENTERS
+        #cdf_interp = interp1d(centers, cdf, bounds_error=False, fill_value=(0,1))
+        
+        #GET NUMBERS OF EXPECTED FLAGGED CELLS
+        #p_nu_z = 1.0-cdf_interp(nu_arr)
+        mean_N_per_cell = z_width * dndz(z_cell,NHI_min=NHI_min,NHI_max=NHI_max)
+        #p_nu_z = 1.0-norm.cdf(nu_arr)
+        valid_per_cell = z_qso[:, None] > z_cell[None, :]
+        n_valid = valid_per_cell.sum(axis=0)
+        p_emp = np.zeros_like(n_valid, dtype=float)
+        mask_valid = n_valid > 0
+        p_emp[mask_valid] = flagged_cells.sum(axis=0)[mask_valid] / n_valid[mask_valid]
+        #p_emp = flagged_cells.sum(axis=0) / n_valid #float(flagged_cells.shape[0])
 
+        # Avoid division by zero / tiny probabilities that blow up mu
+        p_clip = np.maximum(p_emp, 1e-6)
+
+        # Expected mean per cell, scaled by empirical probability
+        mu = mean_N_per_cell / p_clip
     else:
         raise ValueError('Cannot find Gaussian or density delta skewers when flagging cells for DLAs')
 
-    nu_arr = get_threshold(b2f)
-    flagged_cells = flag_DLA(z_qso,z_cell,deltas,nu_arr,sigma_g)
+    #nu_arr = get_threshold(b2f) OLD NOW WE NEED NU FOR EACH TYPE OF SKEWER
+    #flagged_cells = flag_DLA(z_qso,z_cell,deltas,nu_arr,sigma_g)
 
     #Mean of the poisson is the mean number of DLAs with redshift scaled up by
     #the proportion of expected flagged cells.
-    mean_N_per_cell = z_width * dndz(z_cell,NHI_min=NHI_min,NHI_max=NHI_max)
-    p_nu_z = 1.0-norm.cdf(nu_arr)
-    w = p_nu_z>0
-    mu = np.zeros(p_nu_z.shape)
-    mu[w] = mean_N_per_cell[w]/p_nu_z[w]
+    #mean_N_per_cell = z_width * dndz(z_cell,NHI_min=NHI_min,NHI_max=NHI_max)
+    #p_nu_z = 1.0-norm.cdf(nu_arr)
+    #w = p_nu_z>0
+    #mu = np.zeros(p_nu_z.shape)
+    #mu[w] = mean_N_per_cell[w]/p_nu_z[w]
 
     #Draw number of DLAs per cell from a Poisson distribution, place them only
     #in flagged cells.
