@@ -57,8 +57,8 @@ simulation_parameters = utils.get_simulation_parameters(args.in_dir,args.param_f
 
 #If we have density input skewers and want to add DLAs, then raise an error:
 #this functionality is not yet implemented.
-if (args.skewer_type=='density') & args.add_DLAs:
-    raise ValueError('Adding DLAs from density input skewers is not possible yet!')
+#if (args.skewer_type=='density') & args.add_DLAs:
+ #   raise ValueError('Adding DLAs from density input skewers is not possible yet!')
 
 if (args.metals_selection is not None) and (args.metals_list is not None):
     raise ValueError('Both a selection of metals and a list of metals have been provided: choose one!')
